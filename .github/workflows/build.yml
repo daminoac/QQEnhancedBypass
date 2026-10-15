@@ -1,0 +1,91 @@
+name: Build QQ Enhanced Bypass
+
+on:
+  push:
+    branches: [ dev ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ dev ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    env:
+      GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4096m -Dfile.encoding=UTF-8"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v6.1.0
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4.0.4
+
+      - name: Install Android SDK / NDK / CMake
+        run: |
+          yes | sdkmanager --licenses > /dev/null || true
+          sdkmanager \
+            "platform-tools" \
+            "platforms;android-34" \
+            "build-tools;34.0.0" \
+            "ndk;21.4.7075529" \
+            "cmake;3.22.1"
+
+      - name: Set NDK environment
+        run: |
+          echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/21.4.7075529" >> $GITHUB_ENV
+          echo "ANDROID_NDK_ROOT=$ANDROID_SDK_ROOT/ndk/21.4.7075529" >> $GITHUB_ENV
+
+      - name: Clone Dobby source
+        run: |
+          mkdir -p app/src/main/cpp/dobby
+          if [ ! -f app/src/main/cpp/dobby/source/CMakeLists.txt ]; then
+            rm -rf app/src/main/cpp/dobby/source
+            git clone --depth 1 --recursive https://github.com/jmpews/Dobby.git app/src/main/cpp/dobby/source
+          fi
+
+      - name: Grant execute permission for gradlew
+        run: |
+          if [ -f gradlew ]; then
+            chmod +x gradlew
+          else
+            echo "gradlew not found, will use system gradle"
+          fi
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6.4.0
+        with:
+          gradle-version: 8.2
+
+      - name: Build Release APK
+        run: |
+          if [ -f gradlew ]; then
+            ./gradlew clean assembleRelease --stacktrace --no-daemon
+          else
+            gradle clean assembleRelease --stacktrace --no-daemon
+          fi
+
+      - name: Upload Release APK
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: QQEnhancedBypass-release-apk
+          path: app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+
+      - name: Upload mapping
+        if: always()
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: QQEnhancedBypass-mapping
+          path: app/build/outputs/mapping/release/mapping.txt
+          if-no-files-found: ignore
